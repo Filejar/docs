@@ -1,0 +1,328 @@
+---
+title: "NestJS - Backend Recipes"
+description: "Learn how to integrate Filejar with NestJS applications - single and multiple file uploads, database storage, and client-side retrieval"
+---
+
+## Installation
+
+Install the Filejar client and required dependencies:
+
+```bash
+npm install filejar @nestjs/platform-express
+```
+
+## Setup
+
+### Create Filejar Client
+
+Create a Filejar service in your NestJS application:
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import Filejar from 'filejar';
+
+@Injectable()
+export class FilejarService {
+  private filejar: Filejar;
+
+  constructor() {
+    this.filejar = new Filejar({
+      apiKey: process.env.FILEJAR_API_KEY,
+    });
+  }
+
+  getClient() {
+    return this.filejar;
+  }
+}
+```
+
+### Register File Interceptor
+
+File upload limits are configured directly in the interceptor options (shown in the controller examples below).
+
+## Single File Upload Endpoint
+
+Create a controller to upload a single file:
+
+```typescript
+import { Controller, Post, UseInterceptors, UploadedFile, Get, Param, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { FilejarService } from './filejar.service';
+import { fileRepo } from '@/lib/db-repo';
+
+@Controller('api/files')
+export class FilesController {
+  constructor(private readonly filejarService: FilejarService) {}
+
+  @Post('upload')
+  @UseInterceptors(FileInterceptor('file', {
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  }))
+  async uploadFile(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    // Convert buffer to File-like object for uploadFile
+    const fileObj = new File([file.buffer], file.originalname, {
+      type: file.mimetype,
+    });
+
+    // Upload file to Filejar
+    // The body parameter is optional - Filejar will automatically use the file's original name
+    const result = await this.filejarService.getClient().upload.uploadFile([fileObj]);
+    // Or with explicit file name:
+    // const result = await this.filejarService.getClient().upload.uploadFile([fileObj], {
+    //   body: [{ file_name: file.originalname }],
+    // });
+
+    if (!result.response || result.response.length === 0) {
+      throw new InternalServerErrorException('Failed to upload file');
+    }
+
+    const uploadResult = result.response[0];
+    const acknowledged = result.acknowledge[0];
+    
+    // Check if acknowledgment was successful
+    if ('error' in acknowledged) {
+      throw new InternalServerErrorException(acknowledged.error);
+    }
+
+    // Construct file URL using the key
+    const fileUrl = `https://cdn.filejar.dev/${uploadResult.key}`;
+    
+    // Store file metadata in database
+    const savedFile = await fileRepo.create({
+      key: uploadResult.key,
+      uploadId: uploadResult.upload_id,
+      originalName: file.originalname,
+      contentType: acknowledged.content_type,
+      size: acknowledged.size,
+      url: fileUrl,
+      uploadedBy: 'user-id', // Get from your auth guard
+    });
+
+    return {
+      success: true,
+      file: savedFile,
+    };
+  }
+}
+```
+
+## Multiple Files Upload Endpoint
+
+Create an endpoint to upload multiple files:
+
+```typescript
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { UploadedFiles } from '@nestjs/common';
+
+@Controller('api/files')
+export class FilesController {
+  // ... constructor and other methods
+
+  @Post('upload-multiple')
+  @UseInterceptors(FilesInterceptor('files', 10, {
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  }))
+  async uploadFiles(@UploadedFiles() files: Express.Multer.File[]) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('No files uploaded');
+    }
+
+    // Convert buffers to File-like objects
+    const fileObjs = files.map(file => 
+      new File([file.buffer], file.originalname, { type: file.mimetype })
+    );
+
+    // Upload all files to Filejar
+    // The body parameter is optional - Filejar will automatically use each file's original name
+    const result = await this.filejarService.getClient().upload.uploadFile(fileObjs);
+    // Or with explicit file names:
+    // const result = await this.filejarService.getClient().upload.uploadFile(fileObjs, {
+    //   body: files.map(file => ({ file_name: file.originalname })),
+    // });
+
+    if (!result.response || result.response.length === 0) {
+      throw new InternalServerErrorException('Failed to upload files');
+    }
+
+    // Store file metadata in database
+    const filePromises = result.response.map(async (uploadResult, index) => {
+      const originalFile = files[index];
+      const acknowledged = result.acknowledge[index];
+      
+      // Skip if acknowledgment failed
+      if ('error' in acknowledged) {
+        console.error(`Failed to acknowledge ${originalFile.originalname}:`, acknowledged.error);
+        return null;
+      }
+
+      // Construct file URL using the key
+      const fileUrl = `https://cdn.filejar.dev/${uploadResult.key}`;
+      
+      const savedFile = await fileRepo.create({
+        key: uploadResult.key,
+        uploadId: uploadResult.upload_id,
+        originalName: originalFile.originalname,
+        contentType: acknowledged.content_type,
+        size: acknowledged.size,
+        url: fileUrl,
+        uploadedBy: 'user-id',
+      });
+
+      return savedFile;
+    });
+
+    const uploadedFiles = (await Promise.all(filePromises)).filter(file => file !== null);
+
+    return {
+      success: true,
+      files: uploadedFiles,
+      count: uploadedFiles.length,
+    };
+  }
+}
+```
+
+## Retrieve Files from Database
+
+Create endpoints to retrieve file information:
+
+```typescript
+import { fileRepo } from '@/lib/db-repo';
+import { NotFoundException } from '@nestjs/common';
+
+@Controller('api/files')
+export class FilesController {
+  // ... constructor and other methods
+
+  @Get(':id')
+  async getFile(@Param('id') id: string) {
+    const file = await fileRepo.findById(id);
+
+    if (!file) {
+      throw new NotFoundException('File not found');
+    }
+
+    return file;
+  }
+
+  @Get()
+  async getAllFiles() {
+    const files = await fileRepo.findAll();
+
+    return { files };
+  }
+}
+```
+
+## Client-Side Usage
+
+### Upload Single File
+
+```typescript
+// Client-side: Upload single file
+async function uploadFile(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE_URL}/api/files/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const data = await response.json();
+  return data.file; // Contains id, filejarId, filejarKey, name, url
+}
+```
+
+### Upload Multiple Files
+
+```typescript
+// Client-side: Upload multiple files
+async function uploadFiles(files: File[]) {
+  const formData = new FormData();
+  files.forEach(file => {
+    formData.append('files', file);
+  });
+
+  const response = await fetch(`${API_BASE_URL}/api/files/upload-multiple`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const data = await response.json();
+  return data.files; // Array of file objects
+}
+```
+
+### Retrieve File
+
+Simply use the file key to construct the URL:
+
+```typescript
+// Direct URL access using the file key
+const fileUrl = `https://cdn.filejar.dev/${key}`;
+
+// Example: Display file in img tag
+<img src={`https://cdn.filejar.dev/${fileKey}`} alt="Uploaded file" />
+```
+
+## Complete Example
+
+Here's a complete NestJS module setup:
+
+```typescript
+import { Module } from '@nestjs/common';
+import { FilesController } from './files.controller';
+import { FilejarService } from './filejar.service';
+
+@Module({
+  controllers: [FilesController],
+  providers: [FilejarService],
+})
+export class FilesModule {}
+```
+
+```typescript
+// files.controller.ts
+import { Controller, Post, Get, Param, UseInterceptors, UploadedFile, UploadedFiles, BadRequestException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { FilejarService } from './filejar.service';
+import { fileRepo } from '@/lib/db-repo';
+
+@Controller('api/files')
+export class FilesController {
+  constructor(private readonly filejarService: FilejarService) {}
+
+  @Post('upload')
+  @UseInterceptors(FileInterceptor('file', {
+    limits: { fileSize: 10 * 1024 * 1024 },
+  }))
+  async uploadFile(@UploadedFile() file: Express.Multer.File) {
+    // ... single upload code from above
+  }
+
+  @Post('upload-multiple')
+  @UseInterceptors(FilesInterceptor('files', 10, {
+    limits: { fileSize: 10 * 1024 * 1024 },
+  }))
+  async uploadFiles(@UploadedFiles() files: Express.Multer.File[]) {
+    // ... multiple upload code from above
+  }
+
+  @Get(':id')
+  async getFile(@Param('id') id: string) {
+    // ... get file code from above
+  }
+
+  @Get()
+  async getAllFiles() {
+    // ... get all files code from above
+  }
+}
+```
+

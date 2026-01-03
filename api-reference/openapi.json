@@ -7,10 +7,6 @@
   },
   "servers": [
     {
-      "url": "http://localhost:8787",
-      "description": "Local development server"
-    },
-    {
       "url": "https://core-api.filejar-dev.workers.dev",
       "description": "Production server"
     }

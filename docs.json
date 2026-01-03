@@ -8,6 +8,13 @@
     "dark": "#15803D"
   },
   "favicon": "/favicon.svg",
+  "api": {
+    "baseUrl": "https://core-api.filejar.dev",
+    "playground": {
+      "mode": "simple",
+      "disableProxy": true
+    }
+  },
   "navigation": {
     "tabs": [
       {
@@ -19,7 +26,12 @@
           },
           {
             "group": "Backend Recipes",
-            "pages": ["backend-recipes/node/express"]
+            "pages": [
+              "backend-recipes/node/express",
+              "backend-recipes/node/hono",
+              "backend-recipes/node/fastify",
+              "backend-recipes/node/nestjs"
+            ]
           }
         ]
       },
