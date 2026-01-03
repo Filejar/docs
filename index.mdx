@@ -5,7 +5,29 @@ description: "Skip the complexity of S3. FileJar gives you type-safe APIs, built
 
 import NodejsRecipe from '/snippets/nodejs-framework-recipes.mdx';
 
-File uploads shouldn't be complicated. Yet every project requiring file storage encounters the same repetitive challenges:
+**Every. Single. Project.**
+
+Filejar removes this burden entirely. Upload files with one simple API call—zero infrastructure configuration, zero security setup, zero CORS complications. It simply works, immediately, in any environment.
+
+This library offers easy access to the Filejar REST API from server-side TypeScript or JavaScript applications.
+
+## It's that simple
+
+Upload a file in just a few lines:
+
+```typescript
+import Filejar from 'filejar';
+
+const filejar = new Filejar({
+  apiKey: process.env.FILEJAR_API_KEY,
+});
+
+// Upload a file
+const result = await filejar.upload.uploadFile([file]);
+const fileUrl = `https://cdn.filejar.dev/${result.response[0].key}`;
+
+// Done! Your file is live on CDN
+```
 
 **S3 setup is overwhelming:**
 - Define IAM roles and policies
@@ -29,11 +51,9 @@ File uploads shouldn't be complicated. Yet every project requiring file storage 
 - Apply security headers appropriately
 - Safely store and manage secrets and credentials
 
-**Every. Single. Project.**
 
-Filejar removes this burden entirely. Upload files with one simple API call—zero infrastructure configuration, zero security setup, zero CORS complications. It simply works, immediately, in any environment.
 
-This library offers easy access to the Filejar REST API from server-side TypeScript or JavaScript applications.
+No configuration. No setup. Just upload and go.
 
 ## Backend Recipes
 
