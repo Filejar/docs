@@ -1,0 +1,356 @@
+---
+title: "ElysiaJS - Backend Recipes"
+description: "Learn how to integrate Filejar with ElysiaJS applications - single and multiple file uploads, database storage, and client-side retrieval"
+---
+
+## Installation
+
+Install the Filejar client and required dependencies:
+
+```bash
+npm install filejar elysia @elysiajs/static
+```
+
+## Setup
+
+### Create Filejar Client
+
+Initialize the Filejar client in your ElysiaJS application:
+
+```typescript
+import { Elysia } from 'elysia';
+import Filejar from 'filejar';
+
+const app = new Elysia();
+
+// Initialize Filejar client
+const filejar = new Filejar({
+  apiKey: process.env.FILEJAR_API_KEY,
+});
+```
+
+## Single File Upload Endpoint
+
+Create an endpoint to upload a single file:
+
+```typescript
+import { fileRepo } from '@/lib/db-repo';
+
+// Single file upload endpoint
+app.post('/api/files/upload', async ({ body }) => {
+  try {
+    const file = body.file as File;
+
+    if (!file) {
+      return {
+        error: 'No file uploaded',
+      };
+    }
+
+    // Upload file to Filejar
+    // The body parameter is optional - Filejar will automatically use the file's original name
+    const result = await filejar.upload.uploadFile([file]);
+    // Or with explicit file name:
+    // const result = await filejar.upload.uploadFile([file], {
+    //   body: [{ file_name: file.name }],
+    // });
+
+    if (!result.response || result.response.length === 0) {
+      return {
+        error: 'Failed to upload file',
+      };
+    }
+
+    const uploadResult = result.response[0];
+    const acknowledged = result.acknowledge[0];
+    
+    // Check if acknowledgment was successful
+    if ('error' in acknowledged) {
+      return {
+        error: acknowledged.error,
+      };
+    }
+
+    // Construct file URL using the key
+    const fileUrl = `https://cdn.filejar.dev/${uploadResult.key}`;
+    
+    // Store file metadata in database
+    const savedFile = await fileRepo.create({
+      key: uploadResult.key,
+      uploadId: uploadResult.upload_id,
+      originalName: file.name,
+      contentType: acknowledged.content_type,
+      size: acknowledged.size,
+      url: fileUrl,
+      uploadedBy: 'user-id', // Get from your auth context
+    });
+
+    return {
+      success: true,
+      file: savedFile,
+    };
+  } catch (error) {
+    console.error('Upload error:', error);
+    if (error instanceof Filejar.APIError) {
+      return {
+        error: error.message,
+        status: error.status,
+      };
+    }
+    return {
+      error: 'Failed to upload file',
+    };
+  }
+}, {
+  body: t.Object({
+    file: t.File({
+      type: ['image/*', 'application/pdf', 'text/*'],
+      maxSize: 10 * 1024 * 1024, // 10MB limit
+    }),
+  }),
+});
+```
+
+## Multiple Files Upload Endpoint
+
+Create an endpoint to upload multiple files:
+
+```typescript
+import { t } from 'elysia';
+
+// Multiple files upload endpoint
+app.post('/api/files/upload-multiple', async ({ body }) => {
+  try {
+    const files = Array.isArray(body.files) ? body.files : [body.files].filter(Boolean);
+
+    if (!files || files.length === 0) {
+      return {
+        error: 'No files uploaded',
+      };
+    }
+
+    // Upload all files to Filejar
+    // The body parameter is optional - Filejar will automatically use each file's original name
+    const result = await filejar.upload.uploadFile(files);
+    // Or with explicit file names:
+    // const result = await filejar.upload.uploadFile(files, {
+    //   body: files.map(file => ({ file_name: file.name })),
+    // });
+
+    if (!result.response || result.response.length === 0) {
+      return {
+        error: 'Failed to upload files',
+      };
+    }
+
+    // Store file metadata in database
+    const filePromises = result.response.map(async (uploadResult, index) => {
+      const originalFile = files[index];
+      const acknowledged = result.acknowledge[index];
+      
+      // Skip if acknowledgment failed
+      if ('error' in acknowledged) {
+        console.error(`Failed to acknowledge ${originalFile.name}:`, acknowledged.error);
+        return null;
+      }
+
+      // Construct file URL using the key
+      const fileUrl = `https://cdn.filejar.dev/${uploadResult.key}`;
+      
+      const savedFile = await fileRepo.create({
+        key: uploadResult.key,
+        uploadId: uploadResult.upload_id,
+        originalName: originalFile.name,
+        contentType: acknowledged.content_type,
+        size: acknowledged.size,
+        url: fileUrl,
+        uploadedBy: 'user-id',
+      });
+
+      return savedFile;
+    });
+
+    const uploadedFiles = (await Promise.all(filePromises)).filter(file => file !== null);
+
+    return {
+      success: true,
+      files: uploadedFiles,
+      count: uploadedFiles.length,
+    };
+  } catch (error) {
+    console.error('Upload error:', error);
+    if (error instanceof Filejar.APIError) {
+      return {
+        error: error.message,
+        status: error.status,
+      };
+    }
+    return {
+      error: 'Failed to upload files',
+    };
+  }
+}, {
+  body: t.Object({
+    files: t.Files({
+      type: ['image/*', 'application/pdf', 'text/*'],
+      maxSize: 10 * 1024 * 1024, // 10MB limit
+      minItems: 1,
+      maxItems: 10,
+    }),
+  }),
+});
+```
+
+## Retrieve Files from Database
+
+Create endpoints to retrieve file information:
+
+```typescript
+import { fileRepo } from '@/lib/db-repo';
+
+// Get file by ID
+app.get('/api/files/:id', async ({ params }) => {
+  try {
+    const { id } = params;
+
+    const file = await fileRepo.findById(id);
+
+    if (!file) {
+      return {
+        error: 'File not found',
+      };
+    }
+
+    return file;
+  } catch (error) {
+    console.error('Error retrieving file:', error);
+    return {
+      error: 'Failed to retrieve file',
+    };
+  }
+});
+
+// Get all files
+app.get('/api/files', async () => {
+  try {
+    const files = await fileRepo.findAll();
+
+    return { files };
+  } catch (error) {
+    console.error('Error retrieving files:', error);
+    return {
+      error: 'Failed to retrieve files',
+    };
+  }
+});
+```
+
+## Client-Side Usage
+
+### Upload Single File
+
+```typescript
+// Client-side: Upload single file
+async function uploadFile(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE_URL}/api/files/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const data = await response.json();
+  return data.file; // Contains id, filejarId, filejarKey, name, url
+}
+```
+
+### Upload Multiple Files
+
+```typescript
+// Client-side: Upload multiple files
+async function uploadFiles(files: File[]) {
+  const formData = new FormData();
+  files.forEach(file => {
+    formData.append('files', file);
+  });
+
+  const response = await fetch(`${API_BASE_URL}/api/files/upload-multiple`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const data = await response.json();
+  return data.files; // Array of file objects
+}
+```
+
+### Retrieve File
+
+Simply use the file key to construct the URL:
+
+```typescript
+// Direct URL access using the file key
+const fileUrl = `https://cdn.filejar.dev/${key}`;
+
+// Example: Display file in img tag
+<img src={`https://cdn.filejar.dev/${fileKey}`} alt="Uploaded file" />
+```
+
+## Complete Example
+
+Here's a complete ElysiaJS server setup with all endpoints:
+
+```typescript
+import { Elysia, t } from 'elysia';
+import Filejar from 'filejar';
+import { fileRepo } from '@/lib/db-repo';
+
+const app = new Elysia();
+
+// Initialize Filejar client
+const filejar = new Filejar({
+  apiKey: process.env.FILEJAR_API_KEY,
+});
+
+// Single file upload
+app.post('/api/files/upload', async ({ body }) => {
+  // ... single upload code from above
+}, {
+  body: t.Object({
+    file: t.File({
+      type: ['image/*', 'application/pdf', 'text/*'],
+      maxSize: 10 * 1024 * 1024,
+    }),
+  }),
+});
+
+// Multiple files upload
+app.post('/api/files/upload-multiple', async ({ body }) => {
+  // ... multiple upload code from above
+}, {
+  body: t.Object({
+    files: t.Files({
+      type: ['image/*', 'application/pdf', 'text/*'],
+      maxSize: 10 * 1024 * 1024,
+      minItems: 1,
+      maxItems: 10,
+    }),
+  }),
+});
+
+// Get file by ID
+app.get('/api/files/:id', async ({ params }) => {
+  // ... get file code from above
+});
+
+// Get all files
+app.get('/api/files', async () => {
+  // ... get all files code from above
+});
+
+app.listen(3000, () => {
+  console.log('Server running on http://localhost:3000');
+});
+```
+

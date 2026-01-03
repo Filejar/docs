@@ -30,7 +30,8 @@
               "backend-recipes/node/express",
               "backend-recipes/node/hono",
               "backend-recipes/node/fastify",
-              "backend-recipes/node/nestjs"
+              "backend-recipes/node/nestjs",
+              "backend-recipes/node/elysiajs"
             ]
           }
         ]
