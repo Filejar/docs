@@ -27,6 +27,7 @@
           {
             "group": "Backend Recipes",
             "pages": [
+              "backend-recipes/node/nodejs",
               "backend-recipes/node/express",
               "backend-recipes/node/hono",
               "backend-recipes/node/fastify",

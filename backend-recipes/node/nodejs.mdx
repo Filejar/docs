@@ -1,0 +1,284 @@
+---
+title: "Node.js - General Usage"
+description: "Learn how to use Filejar in Node.js applications - basic setup, file uploads, and error handling"
+---
+
+## Installation
+
+Install the Filejar client:
+
+```bash
+npm install filejar
+```
+
+## Basic Setup
+
+Initialize the Filejar client:
+
+```typescript
+import Filejar from 'filejar';
+
+// Initialize Filejar client
+const filejar = new Filejar({
+  apiKey: process.env.FILEJAR_API_KEY,
+});
+```
+
+## Uploading Files
+
+### Single File Upload
+
+Upload a single file to Filejar:
+
+```typescript
+// Read file from filesystem
+import { readFile } from 'fs/promises';
+
+const fileBuffer = await readFile('./path/to/file.pdf');
+const file = new File([fileBuffer], 'file.pdf', {
+  type: 'application/pdf',
+});
+
+// Upload file to Filejar
+// The body parameter is optional - Filejar will automatically use the file's original name
+const result = await filejar.upload.uploadFile([file]);
+// Or with explicit file name:
+// const result = await filejar.upload.uploadFile([file], {
+//   body: [{ file_name: 'file.pdf' }],
+// });
+
+if (!result.response || result.response.length === 0) {
+  throw new Error('Failed to upload file');
+}
+
+const uploadResult = result.response[0];
+const acknowledged = result.acknowledge[0];
+
+// Check if acknowledgment was successful
+if ('error' in acknowledged) {
+  throw new Error(acknowledged.error);
+}
+
+console.log('File uploaded successfully:', {
+  key: uploadResult.key,
+  uploadId: uploadResult.upload_id,
+  url: `https://cdn.filejar.dev/${uploadResult.key}`,
+  size: acknowledged.size,
+  contentType: acknowledged.content_type,
+});
+```
+
+### Multiple Files Upload
+
+Upload multiple files at once:
+
+```typescript
+import { readFile } from 'fs/promises';
+
+// Read multiple files
+const files = await Promise.all([
+  readFile('./file1.pdf').then(buffer => 
+    new File([buffer], 'file1.pdf', { type: 'application/pdf' })
+  ),
+  readFile('./file2.jpg').then(buffer => 
+    new File([buffer], 'file2.jpg', { type: 'image/jpeg' })
+  ),
+]);
+
+// Upload all files to Filejar
+// The body parameter is optional - Filejar will automatically use each file's original name
+const result = await filejar.upload.uploadFile(files);
+// Or with explicit file names:
+// const result = await filejar.upload.uploadFile(files, {
+//   body: files.map(file => ({ file_name: file.name })),
+// });
+
+if (!result.response || result.response.length === 0) {
+  throw new Error('Failed to upload files');
+}
+
+// Process each uploaded file
+result.response.forEach((uploadResult, index) => {
+  const acknowledged = result.acknowledge[index];
+  
+  if ('error' in acknowledged) {
+    console.error(`Failed to acknowledge ${files[index].name}:`, acknowledged.error);
+    return;
+  }
+
+  console.log(`File ${index + 1} uploaded:`, {
+    key: uploadResult.key,
+    uploadId: uploadResult.upload_id,
+    url: `https://cdn.filejar.dev/${uploadResult.key}`,
+    size: acknowledged.size,
+    contentType: acknowledged.content_type,
+  });
+});
+```
+
+## Working with File Buffers
+
+If you have a file buffer (e.g., from an HTTP request or file system):
+
+```typescript
+// Convert buffer to File object
+function bufferToFile(buffer: Buffer, filename: string, mimetype: string): File {
+  return new File([buffer], filename, {
+    type: mimetype,
+  });
+}
+
+// Example: Upload a buffer
+const fileBuffer = Buffer.from('file content');
+const file = bufferToFile(fileBuffer, 'document.txt', 'text/plain');
+
+const result = await filejar.upload.uploadFile([file]);
+```
+
+## Error Handling
+
+Handle errors properly:
+
+```typescript
+try {
+  const result = await filejar.upload.uploadFile([file]);
+  
+  if (!result.response || result.response.length === 0) {
+    throw new Error('Failed to upload file');
+  }
+
+  const uploadResult = result.response[0];
+  const acknowledged = result.acknowledge[0];
+
+  if ('error' in acknowledged) {
+    throw new Error(`Upload acknowledgment failed: ${acknowledged.error}`);
+  }
+
+  // Success
+  console.log('File uploaded:', uploadResult.key);
+} catch (error) {
+  if (error instanceof Filejar.APIError) {
+    console.error('Filejar API Error:', {
+      status: error.status,
+      message: error.message,
+      name: error.name,
+    });
+  } else {
+    console.error('Upload error:', error);
+  }
+}
+```
+
+## File URL Construction
+
+After uploading, construct the file URL using the key:
+
+```typescript
+const uploadResult = result.response[0];
+const fileUrl = `https://cdn.filejar.dev/${uploadResult.key}`;
+
+// Use the URL to access the file
+console.log('File URL:', fileUrl);
+```
+
+## Complete Example
+
+Here's a complete example of uploading a file:
+
+```typescript
+import Filejar from 'filejar';
+import { readFile } from 'fs/promises';
+
+async function uploadFileToFilejar(filePath: string) {
+  try {
+    // Initialize Filejar client
+    const filejar = new Filejar({
+      apiKey: process.env.FILEJAR_API_KEY,
+    });
+
+    // Read file from filesystem
+    const fileBuffer = await readFile(filePath);
+    const fileName = filePath.split('/').pop() || 'file';
+    
+    // Determine MIME type (you may want to use a library like 'mime-types')
+    const mimeType = 'application/octet-stream'; // Default
+    
+    const file = new File([fileBuffer], fileName, {
+      type: mimeType,
+    });
+
+    // Upload file
+    const result = await filejar.upload.uploadFile([file]);
+
+    if (!result.response || result.response.length === 0) {
+      throw new Error('Failed to upload file');
+    }
+
+    const uploadResult = result.response[0];
+    const acknowledged = result.acknowledge[0];
+
+    if ('error' in acknowledged) {
+      throw new Error(acknowledged.error);
+    }
+
+    // Construct file URL
+    const fileUrl = `https://cdn.filejar.dev/${uploadResult.key}`;
+
+    return {
+      key: uploadResult.key,
+      uploadId: uploadResult.upload_id,
+      url: fileUrl,
+      size: acknowledged.size,
+      contentType: acknowledged.content_type,
+    };
+  } catch (error) {
+    if (error instanceof Filejar.APIError) {
+      console.error('Filejar API Error:', error.message);
+      throw error;
+    }
+    console.error('Upload error:', error);
+    throw error;
+  }
+}
+
+// Usage
+uploadFileToFilejar('./my-file.pdf')
+  .then(result => {
+    console.log('File uploaded successfully:', result);
+  })
+  .catch(error => {
+    console.error('Failed to upload file:', error);
+  });
+```
+
+## TypeScript Support
+
+Filejar includes full TypeScript support:
+
+```typescript
+import Filejar from 'filejar';
+
+const filejar = new Filejar({
+  apiKey: process.env.FILEJAR_API_KEY,
+});
+
+// TypeScript will provide type hints and autocomplete
+const result = await filejar.upload.uploadFile([file]);
+
+// Access typed response
+const uploadResult: { key: string; upload_id: string } = result.response[0];
+const acknowledged = result.acknowledge[0];
+```
+
+## Best Practices
+
+1. **Always check acknowledgment**: Verify that the upload was acknowledged successfully before using the file.
+
+2. **Handle errors gracefully**: Use try-catch blocks and check for `Filejar.APIError` instances.
+
+3. **Store file metadata**: Save the `key` and `upload_id` in your database for later retrieval.
+
+4. **Use file URLs**: Construct file URLs using `https://cdn.filejar.dev/${key}` for client-side access.
+
+5. **Validate file types**: Validate file types and sizes before uploading to avoid unnecessary API calls.
+
