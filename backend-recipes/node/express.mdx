@@ -1,0 +1,326 @@
+---
+title: "Express - Backend Recipes"
+description: "Learn how to integrate Filejar with Express.js applications - single and multiple file uploads, database storage, and client-side retrieval"
+---
+
+## Installation
+
+Install the Filejar client and required dependencies:
+
+```bash
+npm install filejar express multer
+```
+
+## Setup
+
+### Create Filejar Client
+
+Initialize the Filejar client in your Express application:
+
+```typescript
+import express from 'express';
+import Filejar from 'filejar';
+
+const app = express();
+
+// Initialize Filejar client
+const filejar = new Filejar({
+  apiKey: process.env.FILEJAR_API_KEY,
+});
+```
+
+## Single File Upload Endpoint
+
+Create an endpoint to upload a single file:
+
+```typescript
+import multer from 'multer';
+import { fileRepo } from '@/lib/db-repo';
+
+// Configure Multer for file uploads
+const storage = multer.memoryStorage();
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
+
+// Single file upload endpoint
+app.post('/api/files/upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Convert buffer to File-like object for uploadFile
+    const file = new File([req.file.buffer], req.file.originalname, {
+      type: req.file.mimetype,
+    });
+
+    // Upload file to Filejar
+    // The body parameter is optional - Filejar will automatically use the file's original name
+    const result = await filejar.upload.uploadFile([file]);
+    // Or with explicit file name:
+    // const result = await filejar.upload.uploadFile([file], {
+    //   body: [{ file_name: req.file.originalname }],
+    // });
+
+    if (!result.response || result.response.length === 0) {
+      return res.status(500).json({ error: 'Failed to upload file' });
+    }
+
+    const uploadResult = result.response[0];
+    const acknowledged = result.acknowledge[0];
+    
+    // Check if acknowledgment was successful
+    if ('error' in acknowledged) {
+      return res.status(500).json({ error: acknowledged.error });
+    }
+
+    // Construct file URL using the key
+    const fileUrl = `https://cdn.filejar.dev/${uploadResult.key}`;
+    
+    // Store file metadata in database
+    const savedFile = await fileRepo.create({
+      key: uploadResult.key,
+      uploadId: uploadResult.upload_id,
+      originalName: req.file.originalname,
+      contentType: acknowledged.content_type,
+      size: acknowledged.size,
+      url: fileUrl,
+      uploadedBy: req.authId, // Assuming you have auth middleware
+    });
+
+    res.json({
+      success: true,
+      file: savedFile,
+    });
+  } catch (error) {
+    console.error('Upload error:', error);
+    if (error instanceof Filejar.APIError) {
+      return res.status(error.status || 500).json({ 
+        error: error.message,
+        status: error.status 
+      });
+    }
+    res.status(500).json({ error: 'Failed to upload file' });
+  }
+});
+```
+
+## Multiple Files Upload Endpoint
+
+Create an endpoint to upload multiple files:
+
+```typescript
+// Multiple files upload endpoint
+app.post('/api/files/upload-multiple', upload.array('files', 10), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    // Convert buffers to File-like objects
+    const files = req.files.map(file => 
+      new File([file.buffer], file.originalname, { type: file.mimetype })
+    );
+
+    // Upload all files to Filejar
+    // The body parameter is optional - Filejar will automatically use each file's original name
+    const result = await filejar.upload.uploadFile(files);
+    // Or with explicit file names:
+    // const result = await filejar.upload.uploadFile(files, {
+    //   body: req.files.map(file => ({ file_name: file.originalname })),
+    // });
+
+    if (!result.response || result.response.length === 0) {
+      return res.status(500).json({ error: 'Failed to upload files' });
+    }
+
+    // Store file metadata in database
+    const filePromises = result.response.map(async (uploadResult, index) => {
+      const originalFile = req.files[index];
+      const acknowledged = result.acknowledge[index];
+      
+      // Skip if acknowledgment failed
+      if ('error' in acknowledged) {
+        console.error(`Failed to acknowledge ${originalFile.originalname}:`, acknowledged.error);
+        return null;
+      }
+
+      // Construct file URL using the key
+      const fileUrl = `https://cdn.filejar.dev/${uploadResult.key}`;
+      
+      const savedFile = await fileRepo.create({
+        key: uploadResult.key,
+        uploadId: uploadResult.upload_id,
+        originalName: originalFile.originalname,
+        contentType: acknowledged.content_type,
+        size: acknowledged.size,
+        url: fileUrl,
+        uploadedBy: req.authId,
+      });
+
+      return savedFile;
+    });
+
+    const uploadedFiles = (await Promise.all(filePromises)).filter(file => file !== null);
+
+    res.json({
+      success: true,
+      files: uploadedFiles,
+      count: uploadedFiles.length,
+    });
+  } catch (error) {
+    console.error('Upload error:', error);
+    if (error instanceof Filejar.APIError) {
+      return res.status(error.status || 500).json({ 
+        error: error.message,
+        status: error.status 
+      });
+    }
+    res.status(500).json({ error: 'Failed to upload files' });
+  }
+});
+```
+
+## Retrieve Files from Database
+
+Create an endpoint to retrieve file information using the stored key:
+
+```typescript
+import { fileRepo } from '@/lib/db-repo';
+
+// Get file by ID
+app.get('/api/files/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const file = await fileRepo.findById(id);
+
+    if (!file) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    res.json(file);
+  } catch (error) {
+    console.error('Error retrieving file:', error);
+    res.status(500).json({ error: 'Failed to retrieve file' });
+  }
+});
+
+// Get all files
+app.get('/api/files', async (req, res) => {
+  try {
+    const files = await fileRepo.findAll();
+
+    res.json({ files });
+  } catch (error) {
+    console.error('Error retrieving files:', error);
+    res.status(500).json({ error: 'Failed to retrieve files' });
+  }
+});
+```
+
+## Client-Side Usage
+
+### Upload Single File
+
+```typescript
+// Client-side: Upload single file
+async function uploadFile(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_BASE_URL}/api/files/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const data = await response.json();
+  return data.file; // Contains id, filejarId, filejarKey, name, url
+}
+```
+
+### Upload Multiple Files
+
+```typescript
+// Client-side: Upload multiple files
+async function uploadFiles(files: File[]) {
+  const formData = new FormData();
+  files.forEach(file => {
+    formData.append('files', file);
+  });
+
+  const response = await fetch(`${API_BASE_URL}/api/files/upload-multiple`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const data = await response.json();
+  return data.files; // Array of file objects
+}
+```
+
+### Retrieve File
+
+Simply use the file key to construct the URL:
+
+```typescript
+// Direct URL access using the file key
+const fileUrl = `https://cdn.filejar.dev/${key}`;
+
+// Example: Display file in img tag
+<img src={`https://cdn.filejar.dev/${fileKey}`} alt="Uploaded file" />
+```
+
+## Complete Example
+
+Here's a complete Express server setup with all endpoints:
+
+```typescript
+import express from 'express';
+import multer from 'multer';
+import Filejar from 'filejar';
+import { fileRepo } from '@/lib/db-repo';
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(express.json());
+
+// Initialize Filejar client
+const filejar = new Filejar({
+  apiKey: process.env.FILEJAR_API_KEY,
+});
+
+// Configure Multer
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB
+});
+
+// Single file upload
+app.post('/api/files/upload', upload.single('file'), async (req, res) => {
+  // ... single upload code from above
+});
+
+// Multiple files upload
+app.post('/api/files/upload-multiple', upload.array('files', 10), async (req, res) => {
+  // ... multiple upload code from above
+});
+
+// Get file by ID
+app.get('/api/files/:id', async (req, res) => {
+  // ... get file code from above
+});
+
+// Get all files
+app.get('/api/files', async (req, res) => {
+  // ... get all files code from above
+});
+
+app.listen(port, () => {
+  console.log(`Server running on http://localhost:${port}`);
+});
+```
+
