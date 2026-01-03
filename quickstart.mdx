@@ -1,80 +1,156 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get started with Filejar in minutes - upload your first file and start building"
 ---
 
 ## Get started in three steps
 
-Get your documentation site running locally and make your first customization.
+Upload your first file to Filejar in under 5 minutes.
 
-### Step 1: Set up your local environment
+### Step 1: Install and setup
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+Install the Filejar client:
+
+```bash
+npm install filejar
+```
+
+Get your API key from the [Filejar dashboard](https://dashboard.filejar.com) and set it as an environment variable:
+
+```bash
+export FILEJAR_API_KEY="your-api-key-here"
+```
+
+### Step 2: Upload your first file
+
+Create a simple script to upload a file:
+
+```typescript
+import Filejar from 'filejar';
+import { readFile } from 'fs/promises';
+
+// Initialize Filejar client
+const filejar = new Filejar({
+  apiKey: process.env.FILEJAR_API_KEY,
+});
+
+// Read a file from your filesystem
+const fileBuffer = await readFile('./example.pdf');
+const file = new File([fileBuffer], 'example.pdf', {
+  type: 'application/pdf',
+});
+
+// Upload to Filejar
+const result = await filejar.upload.uploadFile([file]);
+
+// Get the uploaded file details
+const uploadResult = result.response[0];
+const acknowledged = result.acknowledge[0];
+
+// Your file is now available at:
+const fileUrl = `https://cdn.filejar.dev/${uploadResult.key}`;
+
+console.log('File uploaded successfully!');
+console.log('File URL:', fileUrl);
+console.log('File size:', acknowledged.size, 'bytes');
+```
+
+### Step 3: Use your file
+
+Your uploaded file is immediately available via CDN. Use the URL anywhere:
+
+```html
+<!-- In HTML -->
+<img src="https://cdn.filejar.dev/your-file-key" alt="Uploaded image" />
+
+<!-- Or in your application -->
+<a href="https://cdn.filejar.dev/your-file-key">Download file</a>
+```
+
+## Complete example
+
+Here's a complete working example:
+
+```typescript
+import Filejar from 'filejar';
+import { readFile } from 'fs/promises';
+
+async function uploadFile() {
+  try {
+    // Initialize client
+    const filejar = new Filejar({
+      apiKey: process.env.FILEJAR_API_KEY,
+    });
+
+    // Read file
+    const buffer = await readFile('./my-file.pdf');
+    const file = new File([buffer], 'my-file.pdf', {
+      type: 'application/pdf',
+    });
+
+    // Upload
+    const result = await filejar.upload.uploadFile([file]);
+
+    if (!result.response || result.response.length === 0) {
+      throw new Error('Upload failed');
+    }
+
+    const uploadResult = result.response[0];
+    const acknowledged = result.acknowledge[0];
+
+    if ('error' in acknowledged) {
+      throw new Error(acknowledged.error);
+    }
+
+    // Success!
+    const fileUrl = `https://cdn.filejar.dev/${uploadResult.key}`;
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    return {
+      key: uploadResult.key,
+      url: fileUrl,
+      size: acknowledged.size,
+      contentType: acknowledged.content_type,
+    };
+  } catch (error) {
+    if (error instanceof Filejar.APIError) {
+      console.error('API Error:', error.message);
+    } else {
+      console.error('Error:', error);
+    }
+    throw error;
+  }
+}
 
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+// Run it
+uploadFile()
+  .then(result => console.log('Success:', result))
+  .catch(error => console.error('Failed:', error));
+```
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
+Now that you've uploaded your first file, explore more:
 
 <CardGroup cols={2}>
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
+<Card title="Node.js Guide" icon="code" href="/backend-recipes/node/nodejs">
+  Learn advanced usage patterns and best practices.
 </Card>
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
+<Card title="Framework Recipes" icon="server" href="/backend-recipes/node/nodejs">
+  See how to integrate with Express, Hono, Fastify, NestJS, and ElysiaJS.
 </Card>
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
+<Card title="API Reference" icon="book" href="/api-reference">
+  Explore the complete API documentation.
 </Card>
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
+<Card title="Error Handling" icon="triangle-exclamation" href="/backend-recipes/node/nodejs#error-handling">
+  Learn how to handle errors gracefully.
 </Card>
 
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+<Tip>
+  **Pro tip:** Store the file `key` in your database to retrieve files later. The key is all you need to construct the file URL!
+</Tip>
