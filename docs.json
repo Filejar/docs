@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Filejar Documentation",
+  "theme": "aspen",
+  "name": "Filejar",
   "colors": {
     "primary": "#16A34A",
     "light": "#07C983",
@@ -22,7 +22,7 @@
         "groups": [
           {
             "group": "Getting started",
-            "pages": ["index", "quickstart", "development"]
+            "pages": ["index", "quickstart"]
           },
           {
             "group": "Backend Recipes",
@@ -43,15 +43,12 @@
       }
     ]
   },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
+
   "navbar": {
     "primary": {
       "type": "button",
       "label": "Dashboard",
-      "href": "https://dashboard.filejar.com"
+      "href": "https://www.filejar.dev/dashboard"
     }
   },
   "contextual": {
