@@ -7,7 +7,11 @@
   },
   "servers": [
     {
-      "url": "https://core-api.filejar-dev.workers.dev",
+      "url": "http://localhost:8787",
+      "description": "Local development server"
+    },
+    {
+      "url": "https://core-api.filejar.dev",
       "description": "Production server"
     }
   ],
@@ -19,6 +23,10 @@
     {
       "name": "Upload",
       "description": "File upload endpoints"
+    },
+    {
+      "name": "Files",
+      "description": "File retrieval and management endpoints"
     }
   ],
   "paths": {
@@ -450,6 +458,633 @@
                     "retryAfter": {
                       "type": "number",
                       "description": "Seconds to wait before retrying"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "Internal server error"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/files/organization-files": {
+      "get": {
+        "tags": ["Files"],
+        "summary": "Get organization files",
+        "description": "Returns files belonging to the authenticated organization with pagination, search, filtering, and sorting capabilities.",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (default: 1)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Items per page (default: 100, max: 1000)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 100
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "description": "Number of items to skip (default: 0). Takes precedence over page-based calculation.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Search in id, key, or file_name (case-insensitive partial match)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "content_type",
+            "in": "query",
+            "description": "Filter by content type (exact match)",
+            "schema": {
+              "type": "string",
+              "example": "image/png"
+            }
+          },
+          {
+            "name": "size__gte",
+            "in": "query",
+            "description": "Filter by size greater than or equal (in bytes)",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "example": 1024
+            }
+          },
+          {
+            "name": "size__lte",
+            "in": "query",
+            "description": "Filter by size less than or equal (in bytes)",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "example": 1048576
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Sort field (default: created_at)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "created_at",
+                "updated_at",
+                "file_name",
+                "size",
+                "content_type"
+              ],
+              "default": "created_at"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Sort direction (default: desc)",
+            "schema": {
+              "type": "string",
+              "enum": ["asc", "desc"],
+              "default": "desc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Files retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true,
+                      "description": "Indicates if the request was successful"
+                    },
+                    "org_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Database ID of the organization",
+                      "example": "123e4567-e89b-12d3-a456-426614174000"
+                    },
+                    "org_name": {
+                      "type": "string",
+                      "description": "Name of the organization",
+                      "example": "Acme Corporation"
+                    },
+                    "files": {
+                      "type": "array",
+                      "description": "Array of files belonging to the organization",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Unique identifier for the file upload",
+                            "example": "223e4567-e89b-12d3-a456-426614174001"
+                          },
+                          "key": {
+                            "type": "string",
+                            "description": "File key/path in storage",
+                            "example": "org-id/document1.pdf"
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri",
+                            "description": "CDN URL to access the file",
+                            "example": "https://cdn.filejar.com/org-id/document1.pdf"
+                          },
+                          "file_name": {
+                            "type": "string",
+                            "description": "Original file name",
+                            "example": "document1.pdf"
+                          },
+                          "content_type": {
+                            "type": "string",
+                            "description": "MIME type of the file",
+                            "example": "application/pdf"
+                          },
+                          "size": {
+                            "type": "integer",
+                            "nullable": true,
+                            "description": "File size in bytes (null if not yet acknowledged)",
+                            "example": 1024
+                          },
+                          "acknowledged_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true,
+                            "description": "Timestamp when the upload was acknowledged (null if not yet acknowledged)",
+                            "example": "2024-01-01T12:00:00Z"
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Timestamp when the upload was created",
+                            "example": "2024-01-01T11:00:00Z"
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Timestamp when the upload was last updated",
+                            "example": "2024-01-01T12:00:00Z"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "key",
+                          "url",
+                          "file_name",
+                          "content_type",
+                          "created_at",
+                          "updated_at"
+                        ]
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "description": "Pagination metadata",
+                      "properties": {
+                        "page": {
+                          "type": "integer",
+                          "description": "Current page number",
+                          "example": 1
+                        },
+                        "limit": {
+                          "type": "integer",
+                          "description": "Items per page",
+                          "example": 100
+                        },
+                        "skip": {
+                          "type": "integer",
+                          "description": "Number of items skipped",
+                          "example": 0
+                        },
+                        "total": {
+                          "type": "integer",
+                          "description": "Total number of files matching the filters",
+                          "example": 150
+                        },
+                        "total_pages": {
+                          "type": "integer",
+                          "description": "Total number of pages",
+                          "example": 2
+                        },
+                        "has_next": {
+                          "type": "boolean",
+                          "description": "Whether there is a next page",
+                          "example": true
+                        },
+                        "has_previous": {
+                          "type": "boolean",
+                          "description": "Whether there is a previous page",
+                          "example": false
+                        }
+                      },
+                      "required": [
+                        "page",
+                        "limit",
+                        "skip",
+                        "total",
+                        "total_pages",
+                        "has_next",
+                        "has_previous"
+                      ]
+                    },
+                    "count": {
+                      "type": "integer",
+                      "description": "Number of files returned in this response",
+                      "example": 100
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "org_id",
+                    "org_name",
+                    "files",
+                    "pagination",
+                    "count"
+                  ],
+                  "example": {
+                    "success": true,
+                    "org_id": "123e4567-e89b-12d3-a456-426614174000",
+                    "org_name": "Acme Corporation",
+                    "files": [
+                      {
+                        "id": "223e4567-e89b-12d3-a456-426614174001",
+                        "key": "org-id/document1.pdf",
+                        "url": "https://cdn.filejar.com/org-id/document1.pdf",
+                        "file_name": "document1.pdf",
+                        "content_type": "application/pdf",
+                        "size": 1024,
+                        "acknowledged_at": "2024-01-01T12:00:00Z",
+                        "created_at": "2024-01-01T11:00:00Z",
+                        "updated_at": "2024-01-01T12:00:00Z"
+                      },
+                      {
+                        "id": "323e4567-e89b-12d3-a456-426614174002",
+                        "key": "org-id/image1.jpg",
+                        "url": "https://cdn.filejar.com/org-id/image1.jpg",
+                        "file_name": "image1.jpg",
+                        "content_type": "image/jpeg",
+                        "size": 2048,
+                        "acknowledged_at": "2024-01-01T12:05:00Z",
+                        "created_at": "2024-01-01T12:00:00Z",
+                        "updated_at": "2024-01-01T12:05:00Z"
+                      }
+                    ],
+                    "pagination": {
+                      "page": 1,
+                      "limit": 100,
+                      "skip": 0,
+                      "total": 150,
+                      "total_pages": 2,
+                      "has_next": true,
+                      "has_previous": false
+                    },
+                    "count": 100
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - Validation error in query parameters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "Validation failed"
+                    },
+                    "fields": {
+                      "type": "object",
+                      "description": "Field-specific validation errors"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing API key, or organization ID not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "API key required",
+                      "description": "Either 'API key required', 'Invalid API key', or 'Organization ID not found'"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "Organization not found"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "Internal server error"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/files": {
+      "delete": {
+        "tags": ["Files"],
+        "summary": "Delete file(s) by key(s)",
+        "description": "Deletes one or more files by key from the authenticated organization. Validates API key using WorkOS, extracts organization ID, verifies each file key starts with the organization UUID and belongs to the organization, then deletes from S3 storage and database. Each file key must start with a valid UUID that matches the organization ID. The file key can contain slashes (e.g., 'org-id/path/to/file.png').",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "keys": {
+                    "type": "array",
+                    "description": "Array of file keys/paths in storage. Each key must start with a UUID that matches the organization ID.",
+                    "items": {
+                      "type": "string",
+                      "description": "File key/path in storage (must start with organization UUID)",
+                      "example": "9bbe5ff7-dd84-4af7-a27b-8b6c59855cf4/test/out/example.png"
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": ["keys"]
+              },
+              "example": {
+                "keys": [
+                  "9bbe5ff7-dd84-4af7-a27b-8b6c59855cf4/test/out/example.png",
+                  "9bbe5ff7-dd84-4af7-a27b-8b6c59855cf4/test/out/example2.jpg"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Delete operation completed (may include partial success)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true,
+                      "description": "Indicates if the request was processed"
+                    },
+                    "results": {
+                      "type": "array",
+                      "description": "Array of results for each key. Each item may be a success object or an error object.",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "description": "Successful deletion",
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "description": "File key that was deleted",
+                                "example": "9bbe5ff7-dd84-4af7-a27b-8b6c59855cf4/test/out/example.png"
+                              },
+                              "deleted": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "description": "Unique identifier of the deleted upload",
+                                    "example": "223e4567-e89b-12d3-a456-426614174001"
+                                  },
+                                  "key": {
+                                    "type": "string",
+                                    "description": "File key/path that was deleted",
+                                    "example": "9bbe5ff7-dd84-4af7-a27b-8b6c59855cf4/test/out/example.png"
+                                  },
+                                  "file_name": {
+                                    "type": "string",
+                                    "description": "Original file name",
+                                    "example": "example.png"
+                                  }
+                                },
+                                "required": ["id", "key", "file_name"]
+                              }
+                            },
+                            "required": ["key", "deleted"]
+                          },
+                          {
+                            "type": "object",
+                            "description": "Error for a specific key",
+                            "properties": {
+                              "key": {
+                                "type": "string",
+                                "description": "File key that failed",
+                                "example": "9bbe5ff7-dd84-4af7-a27b-8b6c59855cf4/test/out/example.png"
+                              },
+                              "error": {
+                                "type": "string",
+                                "description": "Error message (e.g., 'File not found' or 'Internal server error')",
+                                "example": "File not found"
+                              }
+                            },
+                            "required": ["key", "error"]
+                          }
+                        ]
+                      }
+                    },
+                    "summary": {
+                      "type": "object",
+                      "description": "Summary of the deletion operation",
+                      "properties": {
+                        "total": {
+                          "type": "integer",
+                          "description": "Total number of keys processed",
+                          "example": 2
+                        },
+                        "deleted": {
+                          "type": "integer",
+                          "description": "Number of files successfully deleted",
+                          "example": 1
+                        },
+                        "errors": {
+                          "type": "integer",
+                          "description": "Number of files that failed to delete",
+                          "example": 1
+                        }
+                      },
+                      "required": ["total", "deleted", "errors"]
+                    }
+                  },
+                  "required": ["success", "results", "summary"],
+                  "example": {
+                    "success": true,
+                    "results": [
+                      {
+                        "key": "9bbe5ff7-dd84-4af7-a27b-8b6c59855cf4/test/out/example.png",
+                        "deleted": {
+                          "id": "223e4567-e89b-12d3-a456-426614174001",
+                          "key": "9bbe5ff7-dd84-4af7-a27b-8b6c59855cf4/test/out/example.png",
+                          "file_name": "example.png"
+                        }
+                      },
+                      {
+                        "key": "9bbe5ff7-dd84-4af7-a27b-8b6c59855cf4/test/out/example2.jpg",
+                        "error": "File not found"
+                      }
+                    ],
+                    "summary": {
+                      "total": 2,
+                      "deleted": 1,
+                      "errors": 1
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - Validation error or keys do not match organization ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "Validation failed",
+                      "description": "Either 'Validation failed' or 'File keys must start with the organization ID'"
+                    },
+                    "fields": {
+                      "type": "object",
+                      "description": "Field-specific validation errors (if validation failed)"
+                    },
+                    "invalid_keys": {
+                      "type": "array",
+                      "description": "Keys that do not match the organization ID (if keys mismatch)",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "expected_org_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Expected organization ID (if keys mismatch)",
+                      "example": "9bbe5ff7-dd84-4af7-a27b-8b6c59855cf4"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - Invalid or missing API key, or organization ID not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "API key required",
+                      "description": "Either 'API key required', 'Invalid API key', or 'Organization ID not found'"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization or file not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "File not found",
+                      "description": "Either 'Organization not found' or 'File not found'"
                     }
                   }
                 }
